@@ -50,3 +50,15 @@ class CartItemResponse(BaseModel):
 class CartResponse(BaseModel):
     items: list[CartItemResponse]
     total: float
+
+
+# ── Messages ──────────────────────────────────────────────────────────────────
+
+class MessageResponse(BaseModel):
+    id: int
+    conversation_id: str
+    role: str
+    content: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}

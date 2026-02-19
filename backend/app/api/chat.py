@@ -130,6 +130,18 @@ async def chat_stream(body: ChatRequest, db: AsyncSession = Depends(get_db)):
     )
 
 
+# ── Load conversation history ─────────────────────────────────────────────────
+
+from app.schemas import MessageResponse
+
+
+@router.get("/{conversation_id}/messages", response_model=list[MessageResponse])
+async def get_messages(conversation_id: str, db: AsyncSession = Depends(get_db)):
+    """Load all messages for a conversation."""
+    messages = await load_messages(db, conversation_id)
+    return messages
+
+
 # Keep the non-streaming endpoint for Swagger testing
 class ChatResponse(BaseModel):
     reply: str

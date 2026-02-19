@@ -47,6 +47,19 @@ export async function removeFromCart(item_id: number): Promise<void> {
   await fetch(`/api/cart/${item_id}`, { method: 'DELETE' })
 }
 
+export interface ChatMessage {
+  id: number
+  conversation_id: string
+  role: 'user' | 'assistant'
+  content: string
+  created_at: string
+}
+
+export async function loadConversation(conversation_id: string): Promise<ChatMessage[]> {
+  const res = await fetch(`/api/chat/${conversation_id}/messages`)
+  return res.json()
+}
+
 export interface ChatResponse {
   reply: string
   conversation_id: string
