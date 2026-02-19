@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect } from 'react'
-import { sendChatMessage } from '../api'
+import { streamChatMessage } from '../api'
 
 interface Message {
   role: 'user' | 'assistant'
@@ -12,13 +12,13 @@ export default function ChatPanel() {
   ])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [status, setStatus] = useState('')
   const [conversationId, setConversationId] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+  }, [messages, status])
 
   async function sendMessage() {
     if (!input.trim() || loading) return
@@ -27,19 +27,40 @@ export default function ChatPanel() {
     setInput('')
     setMessages((prev) => [...prev, { role: 'user', content: userMessage }])
     setLoading(true)
+    setStatus('')
 
-    try {
-      const response = await sendChatMessage(userMessage, conversationId)
-      setConversationId(response.conversation_id)
-      setMessages((prev) => [...prev, { role: 'assistant', content: response.reply }])
-    } catch {
-      setMessages((prev) => [
-        ...prev,
-        { role: 'assistant', content: 'Sorry, something went wrong. Please try again.' },
-      ])
-    } finally {
-      setLoading(false)
-    }
+    // Add an empty assistant message that we'll stream into
+    setMessages((prev) => [...prev, { role: 'assistant', content: '' }])
+
+    await streamChatMessage(userMessage, conversationId, {
+      onToken: (token) => {
+        // Append token to the last (assistant) message
+        setMessages((prev) => {
+          const updated = [...prev]
+          const last = updated[updated.length - 1]
+          updated[updated.length - 1] = { ...last, content: last.content + token }
+          return updated
+        })
+        setStatus('') // clear status once tokens start flowing
+      },
+      onStatus: (statusText) => {
+        setStatus(statusText)
+      },
+      onDone: (newConversationId) => {
+        setConversationId(newConversationId)
+        setLoading(false)
+        setStatus('')
+      },
+      onError: (error) => {
+        setMessages((prev) => {
+          const updated = [...prev]
+          updated[updated.length - 1] = { role: 'assistant', content: error }
+          return updated
+        })
+        setLoading(false)
+        setStatus('')
+      },
+    })
   }
 
   return (
@@ -64,11 +85,11 @@ export default function ChatPanel() {
           </div>
         ))}
 
-        {/* Typing indicator */}
-        {loading && (
+        {/* Status indicator (tool execution) */}
+        {status && (
           <div className="flex justify-start">
-            <div className="bg-gray-100 rounded-2xl px-4 py-2 text-sm text-gray-400">
-              Thinking...
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-2 text-sm text-amber-600">
+              {status}
             </div>
           </div>
         )}
