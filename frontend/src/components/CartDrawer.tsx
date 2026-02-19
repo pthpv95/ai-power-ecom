@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { fetchCart, removeFromCart, type Cart } from '../api'
 
-export default function CartDrawer() {
+export default function CartDrawer({ cartVersion }: { cartVersion: number }) {
   const [cart, setCart] = useState<Cart>({ items: [], total: 0 })
 
   async function loadCart() {
@@ -11,7 +11,7 @@ export default function CartDrawer() {
 
   useEffect(() => {
     loadCart()
-  }, [])
+  }, [cartVersion])
 
   async function handleRemove(itemId: number) {
     await removeFromCart(itemId)

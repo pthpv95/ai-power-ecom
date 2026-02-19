@@ -91,6 +91,10 @@ async def chat_stream(body: ChatRequest, db: AsyncSession = Depends(get_db)):
                     tool_fn = TOOL_MAP[tool_call["name"]]
                     result = await tool_fn.ainvoke(tool_call["args"])
 
+                    # Notify frontend to refresh cart when cart changes
+                    if tool_name in ("add_to_cart", "remove_from_cart"):
+                        yield sse_event({"type": "cart_updated"})
+
                     from langchain_core.messages import ToolMessage
                     current_messages.append(response)
                     current_messages.append(ToolMessage(

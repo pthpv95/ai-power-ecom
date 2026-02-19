@@ -9,9 +9,10 @@ interface Message {
 interface ChatPanelProps {
   conversationId: string | null
   onConversationId: (id: string) => void
+  onCartUpdated: () => void
 }
 
-export default function ChatPanel({ conversationId, onConversationId }: ChatPanelProps) {
+export default function ChatPanel({ conversationId, onConversationId, onCartUpdated }: ChatPanelProps) {
   const [messages, setMessages] = useState<Message[]>([
     { role: 'assistant', content: 'Hi! I can help you find outdoor gear. What are you looking for?' },
   ])
@@ -50,6 +51,7 @@ export default function ChatPanel({ conversationId, onConversationId }: ChatPane
     setMessages((prev) => [...prev, { role: 'assistant', content: '' }])
 
     await streamChatMessage(userMessage, conversationId, {
+      onCartUpdated,
       onToken: (token) => {
         setMessages((prev) => {
           const updated = [...prev]

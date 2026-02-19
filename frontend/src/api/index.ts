@@ -97,6 +97,7 @@ export async function streamChatMessage(
     onStatus: (status: string) => void
     onDone: (conversation_id: string) => void
     onError: (error: string) => void
+    onCartUpdated?: () => void
   },
 ): Promise<void> {
   const res = await fetch('/api/chat/stream', {
@@ -140,6 +141,9 @@ export async function streamChatMessage(
           break
         case 'status':
           callbacks.onStatus(data.content)
+          break
+        case 'cart_updated':
+          callbacks.onCartUpdated?.()
           break
         case 'done':
           callbacks.onDone(data.conversation_id)
