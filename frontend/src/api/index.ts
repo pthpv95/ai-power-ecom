@@ -46,3 +46,24 @@ export async function addToCart(product_id: number): Promise<CartItem> {
 export async function removeFromCart(item_id: number): Promise<void> {
   await fetch(`/api/cart/${item_id}`, { method: 'DELETE' })
 }
+
+export interface ChatResponse {
+  reply: string
+  conversation_id: string
+}
+
+export async function sendChatMessage(
+  message: string,
+  conversation_id: string | null,
+): Promise<ChatResponse> {
+  const res = await fetch('/api/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      user_id: USER_ID,
+      message,
+      conversation_id,
+    }),
+  })
+  return res.json()
+}

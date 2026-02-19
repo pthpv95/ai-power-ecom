@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useRef, useState, useEffect } from 'react'
+import { sendChatMessage } from '../api'
 
 interface Message {
   role: 'user' | 'assistant'
@@ -10,12 +11,35 @@ export default function ChatPanel() {
     { role: 'assistant', content: 'Hi! I can help you find outdoor gear. What are you looking for?' },
   ])
   const [input, setInput] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [conversationId, setConversationId] = useState<string | null>(null)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  function sendMessage() {
-    if (!input.trim()) return
-    setMessages((prev) => [...prev, { role: 'user', content: input }])
+  // Auto-scroll to bottom when new messages arrive
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
+
+  async function sendMessage() {
+    if (!input.trim() || loading) return
+
+    const userMessage = input.trim()
     setInput('')
-    // AI response will be wired in Phase 4
+    setMessages((prev) => [...prev, { role: 'user', content: userMessage }])
+    setLoading(true)
+
+    try {
+      const response = await sendChatMessage(userMessage, conversationId)
+      setConversationId(response.conversation_id)
+      setMessages((prev) => [...prev, { role: 'assistant', content: response.reply }])
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        { role: 'assistant', content: 'Sorry, something went wrong. Please try again.' },
+      ])
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -29,7 +53,7 @@ export default function ChatPanel() {
         {messages.map((msg, i) => (
           <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div
-              className={`max-w-[75%] rounded-2xl px-4 py-2 text-sm ${
+              className={`max-w-[75%] rounded-2xl px-4 py-2 text-sm whitespace-pre-wrap ${
                 msg.role === 'user'
                   ? 'bg-blue-500 text-white'
                   : 'bg-gray-100 text-gray-800'
@@ -39,6 +63,17 @@ export default function ChatPanel() {
             </div>
           </div>
         ))}
+
+        {/* Typing indicator */}
+        {loading && (
+          <div className="flex justify-start">
+            <div className="bg-gray-100 rounded-2xl px-4 py-2 text-sm text-gray-400">
+              Thinking...
+            </div>
+          </div>
+        )}
+
+        <div ref={messagesEndRef} />
       </div>
 
       {/* Input */}
@@ -49,10 +84,12 @@ export default function ChatPanel() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
+          disabled={loading}
         />
         <button
           onClick={sendMessage}
-          className="bg-blue-500 text-white px-4 py-2 rounded-full text-sm hover:bg-blue-600"
+          disabled={loading}
+          className="bg-blue-500 text-white px-4 py-2 rounded-full text-sm hover:bg-blue-600 disabled:opacity-50"
         >
           Send
         </button>
