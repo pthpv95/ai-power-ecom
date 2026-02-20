@@ -1,19 +1,29 @@
 import json
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
 from app.database import get_db
 from app.agent.graph import agent, SYSTEM_PROMPT, TOOL_MAP, llm_with_tools
 from app.agent.context import db_var, user_id_var
 from app.services.conversation import save_message, load_messages
 from app.services.context_manager import build_context
+from app.schemas import MessageResponse
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# ── Guardrails ────────────────────────────────────────────────────────────────
+# Prevent runaway agent loops. If the agent calls more tools than this in a
+# single user turn, something is wrong — bail out gracefully.
+MAX_TOOL_ROUNDS = 5
+MAX_MESSAGE_LENGTH = 2000  # characters, reject input over this
 
 
 class ChatRequest(BaseModel):
@@ -22,24 +32,29 @@ class ChatRequest(BaseModel):
     conversation_id: str | None = None
 
 
+FRIENDLY_NAMES = {
+    "search_products": "Searching products...",
+    "get_product_details": "Getting product details...",
+    "add_to_cart": "Adding to cart...",
+    "remove_from_cart": "Removing from cart...",
+    "get_current_cart": "Checking your cart...",
+    "compare_products": "Comparing products...",
+}
+
+
 def sse_event(data: dict) -> str:
-    """Format a dict as an SSE event string."""
     return f"data: {json.dumps(data)}\n\n"
 
 
 @router.post("/stream")
 async def chat_stream(body: ChatRequest, db: AsyncSession = Depends(get_db)):
-    """
-    SSE streaming endpoint.
+    # Input validation
+    if len(body.message) > MAX_MESSAGE_LENGTH:
+        async def reject():
+            yield sse_event({"type": "token", "content": "Your message is too long. Please keep it under 2000 characters."})
+            yield sse_event({"type": "done", "conversation_id": body.conversation_id or ""})
+        return StreamingResponse(reject(), media_type="text/event-stream")
 
-    Streams three types of events to the frontend:
-      - status:  tool execution updates ("Searching products...")
-      - token:   individual tokens as GPT-4o generates them
-      - done:    signals the stream is complete, includes conversation_id
-
-    The frontend reads these with fetch() + ReadableStream.
-    We use POST (not GET) because we need to send a request body.
-    """
     db_var.set(db)
     user_id_var.set(body.user_id)
 
@@ -50,77 +65,76 @@ async def chat_stream(body: ChatRequest, db: AsyncSession = Depends(get_db)):
     messages = await build_context(db_messages)
 
     async def event_generator():
-        """
-        Runs the agent loop manually (instead of agent.ainvoke) so we can
-        stream tokens from the final response and emit status events
-        when tools are called.
-
-        This is the same agent_node → tool_node → agent_node loop,
-        but we control each step to intercept events.
-        """
-        # Prepend system prompt
         current_messages = list(messages)
         if not any(isinstance(m, SystemMessage) for m in current_messages):
             current_messages = [SystemMessage(content=SYSTEM_PROMPT)] + current_messages
 
         full_response = ""
+        tool_rounds = 0
 
-        while True:
-            # Check if this is the final turn (no tool calls expected)
-            # First, do a non-streaming call to check for tool calls
-            response = await llm_with_tools.ainvoke(current_messages)
+        try:
+            while True:
+                response = await llm_with_tools.ainvoke(current_messages)
 
-            if response.tool_calls:
-                # Agent wants to call tools — execute them
-                for tool_call in response.tool_calls:
-                    tool_name = tool_call["name"]
-                    # Emit status event
-                    friendly_names = {
-                        "search_products": "Searching products...",
-                        "get_product_details": "Getting product details...",
-                        "add_to_cart": "Adding to cart...",
-                        "remove_from_cart": "Removing from cart...",
-                        "get_current_cart": "Checking your cart...",
-                        "compare_products": "Comparing products...",
-                    }
-                    yield sse_event({
-                        "type": "status",
-                        "content": friendly_names.get(tool_name, f"Running {tool_name}..."),
-                    })
+                if response.tool_calls:
+                    tool_rounds += 1
 
-                    tool_fn = TOOL_MAP[tool_call["name"]]
-                    result = await tool_fn.ainvoke(tool_call["args"])
+                    # Guardrail: prevent infinite tool loops
+                    if tool_rounds > MAX_TOOL_ROUNDS:
+                        logger.warning(
+                            f"Agent exceeded {MAX_TOOL_ROUNDS} tool rounds for conversation {conversation_id}"
+                        )
+                        full_response = "I got a bit lost processing your request. Could you try rephrasing?"
+                        yield sse_event({"type": "status", "content": ""})
+                        yield sse_event({"type": "token", "content": full_response})
+                        break
 
-                    # Notify frontend to refresh cart when cart changes
-                    if tool_name in ("add_to_cart", "remove_from_cart"):
-                        yield sse_event({"type": "cart_updated"})
-
-                    from langchain_core.messages import ToolMessage
+                    # Append AIMessage ONCE before processing its tool calls
                     current_messages.append(response)
-                    current_messages.append(ToolMessage(
-                        content=str(result),
-                        tool_call_id=tool_call["id"],
-                        name=tool_call["name"],
-                    ))
 
-                # Loop back — agent sees tool results and decides next step
-                continue
+                    for tool_call in response.tool_calls:
+                        tool_name = tool_call["name"]
+                        yield sse_event({
+                            "type": "status",
+                            "content": FRIENDLY_NAMES.get(tool_name, f"Running {tool_name}..."),
+                        })
 
-            else:
-                # No tool calls — this is the final response. Stream it token by token.
-                yield sse_event({"type": "status", "content": ""})  # clear status
+                        try:
+                            tool_fn = TOOL_MAP[tool_call["name"]]
+                            result = await tool_fn.ainvoke(tool_call["args"])
+                        except Exception as e:
+                            logger.error(f"Tool {tool_name} failed: {e}")
+                            result = f"Tool error: unable to complete {tool_name}. Please try again."
 
-                async for chunk in llm_with_tools.astream(current_messages):
-                    token = chunk.content
-                    if token:
-                        full_response += token
-                        yield sse_event({"type": "token", "content": token})
+                        if tool_name in ("add_to_cart", "remove_from_cart"):
+                            yield sse_event({"type": "cart_updated"})
 
-                break
+                        current_messages.append(ToolMessage(
+                            content=str(result),
+                            tool_call_id=tool_call["id"],
+                            name=tool_call["name"],
+                        ))
 
-        # Save the complete response to DB
+                    continue
+
+                else:
+                    yield sse_event({"type": "status", "content": ""})
+
+                    async for chunk in llm_with_tools.astream(current_messages):
+                        token = chunk.content
+                        if token:
+                            full_response += token
+                            yield sse_event({"type": "token", "content": token})
+
+                    break
+
+        except Exception as e:
+            logger.error(f"Agent error for conversation {conversation_id}: {e}")
+            full_response = "Sorry, I encountered an error. Please try again in a moment."
+            yield sse_event({"type": "status", "content": ""})
+            yield sse_event({"type": "token", "content": full_response})
+
         await save_message(db, conversation_id, "assistant", full_response)
-
         yield sse_event({"type": "done", "conversation_id": conversation_id})
 
     return StreamingResponse(
@@ -129,24 +143,21 @@ async def chat_stream(body: ChatRequest, db: AsyncSession = Depends(get_db)):
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",  # disable nginx buffering if behind proxy
+            "X-Accel-Buffering": "no",
         },
     )
 
 
 # ── Load conversation history ─────────────────────────────────────────────────
 
-from app.schemas import MessageResponse
-
-
 @router.get("/{conversation_id}/messages", response_model=list[MessageResponse])
 async def get_messages(conversation_id: str, db: AsyncSession = Depends(get_db)):
-    """Load all messages for a conversation."""
     messages = await load_messages(db, conversation_id)
     return messages
 
 
-# Keep the non-streaming endpoint for Swagger testing
+# ── Non-streaming endpoint for Swagger testing ───────────────────────────────
+
 class ChatResponse(BaseModel):
     reply: str
     conversation_id: str

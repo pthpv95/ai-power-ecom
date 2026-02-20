@@ -1,5 +1,6 @@
 import { useRef, useState, useEffect, useCallback } from 'react'
 import { streamChatMessage, loadConversation } from '../api'
+import ProductCard from './ProductCard'
 
 interface Message {
   role: 'user' | 'assistant'
@@ -10,6 +11,34 @@ interface ChatPanelProps {
   conversationId: string | null
   onConversationId: (id: string) => void
   onCartUpdated: () => void
+}
+
+/**
+ * Parse product references from agent messages.
+ * The agent outputs: [ID:7] Summit Pro Rain Jacket — $74.99
+ * We extract these into structured data for rendering cards.
+ */
+const PRODUCT_RE = /\[ID:(\d+)\]\s*(.+?)\s*—\s*(\$[\d.]+)/g
+
+interface ParsedProduct {
+  id: number
+  name: string
+  price: string
+}
+
+function parseProducts(text: string): ParsedProduct[] {
+  const products: ParsedProduct[] = []
+  let match
+  while ((match = PRODUCT_RE.exec(text)) !== null) {
+    products.push({ id: parseInt(match[1]), name: match[2].trim(), price: match[3] })
+  }
+  PRODUCT_RE.lastIndex = 0 // reset regex state
+  return products
+}
+
+/** Strip [ID:X] tags from display text */
+function formatDisplay(text: string): string {
+  return text.replace(/\[ID:\d+\]\s*/g, '')
 }
 
 export default function ChatPanel({ conversationId, onConversationId, onCartUpdated }: ChatPanelProps) {
@@ -25,7 +54,6 @@ export default function ChatPanel({ conversationId, onConversationId, onCartUpda
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, status])
 
-  // Load conversation from DB when conversationId changes
   const loadChat = useCallback(async (id: string) => {
     const dbMessages = await loadConversation(id)
     if (dbMessages.length > 0) {
@@ -101,19 +129,40 @@ export default function ChatPanel({ conversationId, onConversationId, onCartUpda
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        {messages.map((msg, i) => (
-          <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div
-              className={`max-w-[75%] rounded-2xl px-4 py-2 text-sm whitespace-pre-wrap ${
-                msg.role === 'user'
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-gray-100 text-gray-800'
-              }`}
-            >
-              {msg.content}
+        {messages.map((msg, i) => {
+          const products = msg.role === 'assistant' ? parseProducts(msg.content) : []
+
+          return (
+            <div key={i}>
+              <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div
+                  className={`max-w-[85%] rounded-2xl px-4 py-2 text-sm whitespace-pre-wrap ${
+                    msg.role === 'user'
+                      ? 'bg-blue-500 text-white'
+                      : 'bg-gray-100 text-gray-800'
+                  }`}
+                >
+                  {msg.role === 'assistant' ? formatDisplay(msg.content) : msg.content}
+                </div>
+              </div>
+
+              {/* Product cards rendered below the message */}
+              {products.length > 0 && (
+                <div className="mt-2 ml-2 space-y-1">
+                  {products.map((p) => (
+                    <ProductCard
+                      key={p.id}
+                      id={p.id}
+                      name={p.name}
+                      price={p.price}
+                      onCartUpdated={onCartUpdated}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
-          </div>
-        ))}
+          )
+        })}
 
         {status && (
           <div className="flex justify-start">
