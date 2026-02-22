@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+load_dotenv()  # Push .env vars into os.environ (needed for LangSmith SDK)
+
 from fastapi import FastAPI
 
 from app.api.health import router as health_router
