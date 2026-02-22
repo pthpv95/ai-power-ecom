@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { fetchProducts, addToCart, type Product } from '../api'
 
-export default function ProductGrid() {
+export default function ProductGrid({ onCartUpdated }: { onCartUpdated?: () => void }) {
   const [products, setProducts] = useState<Product[]>([])
 
   useEffect(() => {
@@ -10,7 +10,7 @@ export default function ProductGrid() {
 
   async function handleAddToCart(productId: number) {
     await addToCart(productId)
-    alert('Added to cart!')
+    onCartUpdated?.()
   }
 
   return (
