@@ -36,8 +36,10 @@ Rules:
 - When comparing products, highlight key differences (price, weight, features).
 """
 
+OPENAI_MODEL = "gpt-4o"
+
 llm = ChatOpenAI(
-    model="gpt-4o",
+    model=OPENAI_MODEL,
     api_key=settings.openai_api_key,
     temperature=0,
 )
