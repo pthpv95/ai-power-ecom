@@ -69,12 +69,23 @@ async def chat_stream(body: ChatRequest, db: AsyncSession = Depends(get_db)):
         if not any(isinstance(m, SystemMessage) for m in current_messages):
             current_messages = [SystemMessage(content=SYSTEM_PROMPT)] + current_messages
 
+        # LangSmith metadata — filter traces by conversation_id or user_id
+        langsmith_config = {
+            "metadata": {
+                "conversation_id": conversation_id,
+                "user_id": body.user_id,
+            },
+            "tags": [f"conv:{conversation_id}"],
+        }
+
         full_response = ""
         tool_rounds = 0
 
         try:
             while True:
-                response = await llm_with_tools.ainvoke(current_messages)
+                response = await llm_with_tools.ainvoke(
+                    current_messages, config=langsmith_config
+                )
 
                 if response.tool_calls:
                     tool_rounds += 1
@@ -120,7 +131,9 @@ async def chat_stream(body: ChatRequest, db: AsyncSession = Depends(get_db)):
                 else:
                     yield sse_event({"type": "status", "content": ""})
 
-                    async for chunk in llm_with_tools.astream(current_messages):
+                    async for chunk in llm_with_tools.astream(
+                        current_messages, config=langsmith_config
+                    ):
                         token = chunk.content
                         if token:
                             full_response += token
@@ -174,7 +187,15 @@ async def chat(body: ChatRequest, db: AsyncSession = Depends(get_db)):
     db_messages = await load_messages(db, conversation_id)
     messages = await build_context(db_messages)
 
-    result = await agent.ainvoke({"messages": messages})
+    langsmith_config = {
+        "metadata": {
+            "conversation_id": conversation_id,
+            "user_id": body.user_id,
+        },
+        "tags": [f"conv:{conversation_id}"],
+    }
+
+    result = await agent.ainvoke({"messages": messages}, config=langsmith_config)
     ai_message = result["messages"][-1]
 
     await save_message(db, conversation_id, "assistant", ai_message.content)
