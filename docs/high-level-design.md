@@ -15,11 +15,11 @@ Before anything else, here's how to map what you already know:
 | Prisma / TypeORM     | **SQLAlchemy**            | Database ORM            |
 | Prisma Migrate       | **Alembic**               | DB migrations           |
 | Zod                  | **Pydantic**              | Request/response validation |
-| `npm` / `pnpm`      | **uv**                    | Package manager         |
+| `npm` / `pnpm`       | **uv**                    | Package manager         |
 | `package.json`       | `pyproject.toml`          | Project config          |
 | `node_modules/`      | `.venv/`                  | Dependencies folder     |
 | `nodemon`            | `uvicorn --reload`        | Dev server with hot reload |
-| Next.js API Routes   | FastAPI routers           | API endpoints           |
+| React.js API Routes    FastAPI routers           | API endpoints           |
 
 ---
 
@@ -27,7 +27,7 @@ Before anything else, here's how to map what you already know:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                     FRONTEND (Next.js)                  │
+│                     FRONTEND (React.js)                  │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │
 │  │  Chat Panel   │  │ Product Grid │  │ Cart Drawer  │  │
 │  │  (SSE stream) │  │ (dynamic)    │  │ (real-time)  │  │
@@ -102,7 +102,7 @@ Before anything else, here's how to map what you already know:
 ### Phase 2: Frontend Shell (Days 2–3)
 
 **What to do:**
-- `create-next-app` with TypeScript + Tailwind + App Router
+- Create Vite app with TypeScript + Tailwind
 - Two-panel layout: Chat on the left, Product display on the right
 - Chat input box with message history (just UI, no AI yet)
 - Product cards component (receives products as props)
@@ -283,9 +283,9 @@ Your budget:          ~8K tokens for history (keep it lean for cost)
 ### Phase 6: Streaming & UX Polish (Days 10–12)
 
 **What to do:**
-1. **Server-Sent Events (SSE)** from FastAPI → Next.js
+1. **Server-Sent Events (SSE)** from FastAPI → React.js
    - FastAPI: `StreamingResponse` with `text/event-stream`
-   - Next.js: `EventSource` API or `fetch` with readable stream
+   - React.js: `EventSource` API or `fetch` with readable stream
    - Stream token-by-token as the agent generates its response
 2. **UI enhancements:**
    - Typing indicator while agent is thinking
@@ -313,7 +313,7 @@ Your budget:          ~8K tokens for history (keep it lean for cost)
 ┌─────────────┐     ┌──────────────────┐     ┌──────────────┐
 │   Vercel     │────▶│  AWS App Runner   │────▶│  AWS RDS     │
 │  (Frontend)  │     │  (Backend)        │     │ (PostgreSQL) │
-│  Next.js     │     │  FastAPI          │     └──────────────┘
+│  React.js     │     │  FastAPI          │     └──────────────┘
 └─────────────┘     │                    │
                     │                    │────▶┌──────────────┐
                     └──────────────────┘     │  Pinecone    │
@@ -349,7 +349,7 @@ Your budget:          ~8K tokens for history (keep it lean for cost)
 | LLM                         | GPT-4o           | Best tool-use reliability, fast                        |
 | Streaming                   | SSE              | Simpler than WebSocket, sufficient for chat            |
 | Backend hosting             | AWS App Runner   | Simpler than ECS, auto-scales, Docker-based            |
-| Frontend hosting            | Vercel           | Zero-config for Next.js                                |
+| Frontend hosting            | Vercel           | Zero-config for React.js                                |
 | Context management          | Sliding window + summarization | Balances cost, latency, context quality |
 | Post-retrieval filtering    | SQL after vector search | Embeddings can't reliably encode numeric constraints |
 
@@ -382,7 +382,7 @@ Your budget:          ~8K tokens for history (keep it lean for cost)
 | Phase | Days  | What                              | New Skills Learned                    |
 |-------|-------|-----------------------------------|---------------------------------------|
 | 1     | 1–2   | FastAPI + PostgreSQL + REST APIs  | Python, FastAPI, SQLAlchemy           |
-| 2     | 2–3   | Next.js chat UI shell             | (Your comfort zone — move fast)       |
+| 2     | 2–3   | React.js chat UI shell             | (Your comfort zone — move fast)       |
 | 3     | 3–5   | Semantic search with Pinecone     | Embeddings, vector DB, RAG pattern    |
 | 4     | 5–8   | LangGraph agent + tool use        | LangGraph, function calling, prompting|
 | 5     | 8–10  | Multi-turn memory + context mgmt  | Token management, conversation state  |
