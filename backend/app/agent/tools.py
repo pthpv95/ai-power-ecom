@@ -42,6 +42,9 @@ async def search_products(
     """Search for products by natural language query.
     Use this when the user asks about products, gear recommendations,
     or anything shopping-related. Supports optional price and category filters.
+
+    Available categories (use exact values): jackets, footwear, sleeping, packs, lighting, hydration, cooking, accessories, safety.
+    Only pass category if the user explicitly mentions one. Let the semantic search handle discovery otherwise.
     """
     db = db_var.get()
     products = await semantic_search(
@@ -76,7 +79,9 @@ async def get_product_details(product_id: int) -> str:
 async def add_to_cart(product_id: int, quantity: int = 1) -> str:
     """Add a product to the user's shopping cart.
     Use this when the user says they want to buy, add, or get a product.
-    Always confirm which product before adding.
+    If the user refers to a product from a previous comparison (e.g. "add the cheaper one",
+    "add the most expensive one"), look up the [ID:X] tags and prices in your earlier messages
+    to resolve the correct product_id — do NOT ask for clarification.
     """
     db = db_var.get()
     user_id = user_id_var.get()

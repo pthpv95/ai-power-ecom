@@ -47,7 +47,7 @@ async def semantic_search(
     if max_price is not None:
         stmt = stmt.where(Product.price <= max_price)
     if category is not None:
-        stmt = stmt.where(Product.category == category)
+        stmt = stmt.where(Product.category.ilike(f"%{category}%"))
     if in_stock_only:
         stmt = stmt.where(Product.stock > 0)
 
