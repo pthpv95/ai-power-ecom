@@ -27,17 +27,17 @@ Before anything else, here's how to map what you already know:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                     FRONTEND (React.js)                  │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │
-│  │  Chat Panel   │  │ Product Grid │  │ Cart Drawer  │  │
-│  │  (SSE stream) │  │ (dynamic)    │  │ (real-time)  │  │
+│                     FRONTEND (React.js)                 │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐   │
+│  │  Chat Panel  │  │ Product Grid │  │ Cart Drawer  │  │
+│  │  (SSE stream)│  │ (dynamic)    │  │ (real-time)  │  │
 │  └──────┬───────┘  └──────────────┘  └──────────────┘  │
 │         │ SSE / REST                                    │
 └─────────┼───────────────────────────────────────────────┘
           │
           ▼
 ┌─────────────────────────────────────────────────────────┐
-│                   BACKEND (FastAPI)                      │
+│                   BACKEND (FastAPI)                     │
 │                                                         │
 │  ┌─────────────────────────────────────────────────┐    │
 │  │              /api/chat  (POST)                   │    │
@@ -46,8 +46,8 @@ Before anything else, here's how to map what you already know:
 │  │  │         LangGraph Agent Loop              │   │    │
 │  │  │                                           │   │    │
 │  │  │  User msg → GPT-4o decides:               │   │    │
-│  │  │    ├─ Call a tool? → Execute → Loop back   │   │    │
-│  │  │    └─ Respond? → Stream answer to user     │   │    │
+│  │  │    ├─ Call a tool? → Execute → Loop back  │   │    │
+│  │  │    └─ Respond? → Stream answer to user    │   │    │
 │  │  │                                           │   │    │
 │  │  │  Tools available:                         │   │    │
 │  │  │    • search_products(query, filters)      │   │    │

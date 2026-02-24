@@ -37,6 +37,7 @@ A modern e-commerce platform with an AI-driven shopping assistant.
    cd backend
    uv sync
    # Set up .env file
+   uv run uvicorn app.main:app --reload
    ```
 
 2. **Frontend:**
@@ -44,6 +45,7 @@ A modern e-commerce platform with an AI-driven shopping assistant.
    cd frontend
    npm install
    # Set up .env file
+   npm run dev
    ```
 
 3. **Docker:**
