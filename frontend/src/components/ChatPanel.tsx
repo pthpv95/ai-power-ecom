@@ -41,10 +41,13 @@ function formatDisplay(text: string): string {
   return text.replace(/\[ID:\d+\]\s*/g, '')
 }
 
+const GREETING: Message = {
+  role: 'assistant',
+  content: 'Hi! I can help you find outdoor gear. What are you looking for?',
+}
+
 export default function ChatPanel({ conversationId, onConversationId, onCartUpdated }: ChatPanelProps) {
-  const [messages, setMessages] = useState<Message[]>([
-    { role: 'assistant', content: 'Hi! I can help you find outdoor gear. What are you looking for?' },
-  ])
+  const [messages, setMessages] = useState<Message[]>([GREETING])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [status, setStatus] = useState('')
@@ -57,7 +60,7 @@ export default function ChatPanel({ conversationId, onConversationId, onCartUpda
   const loadChat = useCallback(async (id: string) => {
     const dbMessages = await loadConversation(id)
     if (dbMessages.length > 0) {
-      setMessages(dbMessages.map((m) => ({ role: m.role, content: m.content })))
+      setMessages([GREETING, ...dbMessages.map((m) => ({ role: m.role, content: m.content }))])
     }
   }, [])
 
@@ -111,9 +114,7 @@ export default function ChatPanel({ conversationId, onConversationId, onCartUpda
 
   function newChat() {
     onConversationId('')
-    setMessages([
-      { role: 'assistant', content: 'Hi! I can help you find outdoor gear. What are you looking for?' },
-    ])
+    setMessages([GREETING])
   }
 
   return (
@@ -128,12 +129,12 @@ export default function ChatPanel({ conversationId, onConversationId, onCartUpda
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+      <div data-testid="message-list" className="flex-1 overflow-y-auto p-4 space-y-3">
         {messages.map((msg, i) => {
           const products = msg.role === 'assistant' ? parseProducts(msg.content) : []
 
           return (
-            <div key={i}>
+            <div key={i} data-testid={`message-${msg.role}`}>
               <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                 <div
                   className={`max-w-[85%] rounded-2xl px-4 py-2 text-sm whitespace-pre-wrap ${
@@ -177,6 +178,7 @@ export default function ChatPanel({ conversationId, onConversationId, onCartUpda
 
       <div className="p-4 border-t border-gray-200 flex gap-2">
         <input
+          data-testid="chat-input"
           className="flex-1 border border-gray-300 rounded-full px-4 py-2 text-sm outline-none focus:border-blue-400"
           placeholder="Ask me anything about gear..."
           value={input}
@@ -185,6 +187,7 @@ export default function ChatPanel({ conversationId, onConversationId, onCartUpda
           disabled={loading}
         />
         <button
+          data-testid="send-button"
           onClick={sendMessage}
           disabled={loading}
           className="bg-blue-500 text-white px-4 py-2 rounded-full text-sm hover:bg-blue-600 disabled:opacity-50"
