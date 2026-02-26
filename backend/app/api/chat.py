@@ -117,7 +117,7 @@ async def chat_stream(body: ChatRequest, db: AsyncSession = Depends(get_db)):
                             logger.error(f"Tool {tool_name} failed: {e}")
                             result = f"Tool error: unable to complete {tool_name}. Please try again."
 
-                        if tool_name in ("add_to_cart", "remove_from_cart"):
+                        if tool_name in ("add_to_cart", "remove_from_cart", "clear_cart"):
                             yield sse_event({"type": "cart_updated"})
 
                         current_messages.append(ToolMessage(

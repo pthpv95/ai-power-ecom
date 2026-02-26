@@ -6,4 +6,4 @@ After finish coding, please
 - Always use raw SQL when working with model containing embedding field because prisma doesn't support it
 - Do not git commit automatically when finish coding
 - You're a senior engineer, you should write clean, maintainable, and efficient code. You also help me with learning Python and FastAPI along the way.
-- Always give lessons learned after finishing a task
+- Always give lessons learned after finishing a task and document it into separate document file

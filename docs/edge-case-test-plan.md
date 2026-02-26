@@ -78,12 +78,12 @@ User: "Compare the two cheapest waterproof jackets and add the better-rated one 
 - **Verify:** Correct product actually ends up in the cart
 - **Result:** ___
 
-### Test 2.2 — Search → Details → Decision → Add (4 tools)
+### Test 2.2 — Search → Details → Decision → Add (4 tools)  ✅ 
 ```
 User: "Find me hiking boots under $150. I want the lightest one. Show me its full specs then add it."
 ```
 - **Expected:** search → compare weights → get_product_details on lightest → add_to_cart
-- **Result:** ___
+- **Result:** Worked
 
 ### Test 2.3 — Cart review → Remove → Search → Replace (4 tools)
 ```
@@ -91,7 +91,8 @@ Turn 1: "Add the TrailMaster hiking boots to my cart"
 Turn 2: "Actually, show me what's in my cart, remove the boots, and find me something cheaper"
 ```
 - **Expected:** get_current_cart → remove_from_cart → search_products with lower price
-- **Result:** ___
+- **Result:** Agent fail to remove the boots after asking what's in the cart
+- **Fix:** 
 
 ### Test 2.4 — Parallel information gathering
 ```

@@ -14,7 +14,7 @@ NOT from function arguments. This keeps them invisible to GPT-4o's schema.
 """
 from langchain_core.tools import tool
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import selectinload
 
 from app.models import Product, CartItem
@@ -134,7 +134,29 @@ async def remove_from_cart(product_id: int) -> str:
     return f"Removed the item from your cart."
 
 
-# ── Tool 5: get_current_cart ─────────────────────────────────────────────────
+# ── Tool 5: clear_cart ───────────────────────────────────────────────────────
+
+@tool
+async def clear_cart() -> str:
+    """Remove ALL items from the user's cart at once.
+    Use this when the user wants to empty, clear, or reset their entire cart
+    (e.g. "clear my cart", "remove everything", "start over").
+    Do NOT use this to remove a single item — use remove_from_cart instead.
+    """
+    db = db_var.get()
+    user_id = user_id_var.get()
+
+    result = await db.execute(
+        delete(CartItem).where(CartItem.user_id == user_id)
+    )
+    await db.commit()
+
+    if result.rowcount == 0:
+        return "Your cart is already empty."
+    return f"Done! Removed all {result.rowcount} item(s) from your cart."
+
+
+# ── Tool 6: get_current_cart ─────────────────────────────────────────────────
 
 @tool
 async def get_current_cart() -> str:
@@ -165,7 +187,7 @@ async def get_current_cart() -> str:
     return "\n".join(lines)
 
 
-# ── Tool 6: compare_products ─────────────────────────────────────────────────
+# ── Tool 7: compare_products ─────────────────────────────────────────────────
 
 @tool
 async def compare_products(product_ids: list[int]) -> str:
@@ -194,6 +216,7 @@ ALL_TOOLS = [
     get_product_details,
     add_to_cart,
     remove_from_cart,
+    clear_cart,
     get_current_cart,
     compare_products,
 ]

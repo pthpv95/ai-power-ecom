@@ -31,12 +31,13 @@ Rules:
 - Always show product name and price when discussing products.
 - When the user refers to a product from earlier in the conversation (e.g. "the first one", "the cheaper one"), look for the [ID:X] tag in your previous messages to find the correct product ID before calling add_to_cart.
 - When the user wants to add something to cart, confirm which specific product first.
+- If you realize you added the wrong product to the cart (e.g. wrong ID, wrong item), immediately call remove_from_cart to remove the incorrect item, then call add_to_cart with the correct product ID. Apologize briefly and confirm the correction.
 - Be concise and conversational. Use bullet points for product lists.
 - If the user asks something unrelated to outdoor gear shopping, politely redirect.
 - When comparing products, highlight key differences (price, weight, features).
 """
 
-OPENAI_MODEL = "gpt-4o"
+OPENAI_MODEL = "gpt-4o-mini"
 
 llm = ChatOpenAI(
     model=OPENAI_MODEL,
