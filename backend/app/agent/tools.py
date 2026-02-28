@@ -181,7 +181,7 @@ async def get_current_cart() -> str:
     for item in items:
         subtotal = float(item.product.price) * item.quantity
         total += subtotal
-        lines.append(f"• {item.product.name} x{item.quantity} — ${subtotal:.2f}")
+        lines.append(f"• [ID:{item.product.id}] {item.product.name} x{item.quantity} — ${subtotal:.2f}")
 
     lines.append(f"\nTotal: ${total:.2f}")
     return "\n".join(lines)

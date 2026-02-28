@@ -85,14 +85,14 @@ User: "Find me hiking boots under $150. I want the lightest one. Show me its ful
 - **Expected:** search → compare weights → get_product_details on lightest → add_to_cart
 - **Result:** Worked
 
-### Test 2.3 — Cart review → Remove → Search → Replace (4 tools)
+### Test 2.3 — Cart review → Remove → Search → Replace (4 tools) ✅
 ```
 Turn 1: "Add the TrailMaster hiking boots to my cart"
 Turn 2: "Actually, show me what's in my cart, remove the boots, and find me something cheaper"
 ```
 - **Expected:** get_current_cart → remove_from_cart → search_products with lower price
 - **Result:** Agent fail to remove the boots after asking what's in the cart
-- **Fix:** 
+- **Fix:** Improve system prompt "- When the user wants to remove an item and multiple items could match (e.g. "remove the boots" but there are 3 different boots), ask which one they mean. If the user says "remove all boots" or "remove everything", use remove_from_cart for each matching item or clear_cart if appropriate."
 
 ### Test 2.4 — Parallel information gathering
 ```
@@ -100,7 +100,7 @@ User: "Is the Summit Pro rain jacket waterproof? And how much is the CamelBak ba
 ```
 - **Expected:** Agent answers both questions (may call get_product_details twice or search twice)
 - **Bad outcome:** Agent only answers one question and ignores the other
-- **Result:** ___
+- **Result:** Worked
 
 ### Test 2.5 — Conditional logic
 ```
