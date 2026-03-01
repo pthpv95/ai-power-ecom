@@ -47,6 +47,14 @@ export async function removeFromCart(item_id: number): Promise<void> {
   await fetch(`/api/cart/${item_id}`, { method: 'DELETE' })
 }
 
+export async function updateCartQuantity(item_id: number, quantity: number): Promise<void> {
+  await fetch(`/api/cart/${item_id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ quantity }),
+  })
+}
+
 export interface ChatMessage {
   id: number
   conversation_id: string
