@@ -5,7 +5,7 @@ from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models import CartItem, Product
-from app.schemas import CartItemAdd, CartItemResponse, CartResponse
+from app.schemas import CartItemAdd, CartItemUpdate, CartItemResponse, CartResponse
 
 router = APIRouter()
 
@@ -54,6 +54,29 @@ async def add_to_cart(body: CartItemAdd, db: AsyncSession = Depends(get_db)):
         .options(selectinload(CartItem.product))
     )
     return result.scalar_one()
+
+
+@router.patch("/{item_id}", status_code=200)
+async def update_cart_item(item_id: int, body: CartItemUpdate, db: AsyncSession = Depends(get_db)):
+    cart_item = await db.get(CartItem, item_id)
+    if not cart_item:
+        raise HTTPException(status_code=404, detail="Cart item not found")
+
+    if body.quantity <= 0:
+        await db.delete(cart_item)
+        await db.commit()
+        return {"deleted": True}
+
+    cart_item.quantity = body.quantity
+    await db.commit()
+
+    result = await db.execute(
+        select(CartItem)
+        .where(CartItem.id == cart_item.id)
+        .options(selectinload(CartItem.product))
+    )
+    item = result.scalar_one()
+    return CartItemResponse.model_validate(item)
 
 
 @router.delete("/{item_id}", status_code=204)

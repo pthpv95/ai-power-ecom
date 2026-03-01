@@ -37,6 +37,10 @@ class CartItemAdd(BaseModel):
     quantity: int = 1
 
 
+class CartItemUpdate(BaseModel):
+    quantity: int
+
+
 class CartItemResponse(BaseModel):
     id: int
     user_id: str
