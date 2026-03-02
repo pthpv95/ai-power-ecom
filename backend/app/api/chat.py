@@ -1,16 +1,20 @@
+import asyncio
 import json
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends
-from fastapi.responses import StreamingResponse
+from arq import create_pool
+from arq.connections import RedisSettings
+from fastapi import APIRouter, Depends, Query
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
+from app.config import settings
 from app.database import get_db
-from app.agent.graph import agent, SYSTEM_PROMPT, TOOL_MAP, llm_with_tools
+from app.agent.graph import agent
 from app.agent.context import db_var, user_id_var
+from app.redis_client import get_redis
 from app.services.conversation import save_message, load_messages
 from app.services.context_manager import build_context
 from app.schemas import MessageResponse
@@ -19,11 +23,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# ── Guardrails ────────────────────────────────────────────────────────────────
-# Prevent runaway agent loops. If the agent calls more tools than this in a
-# single user turn, something is wrong — bail out gracefully.
-MAX_TOOL_ROUNDS = 5
 MAX_MESSAGE_LENGTH = 2000  # characters, reject input over this
+SSE_TIMEOUT_SECONDS = 60   # close SSE if no events for this long
 
 
 class ChatRequest(BaseModel):
@@ -32,126 +33,119 @@ class ChatRequest(BaseModel):
     conversation_id: str | None = None
 
 
-FRIENDLY_NAMES = {
-    "search_products": "Searching products...",
-    "get_product_details": "Getting product details...",
-    "add_to_cart": "Adding to cart...",
-    "remove_from_cart": "Removing from cart...",
-    "get_current_cart": "Checking your cart...",
-    "compare_products": "Comparing products...",
-}
+class EnqueueResponse(BaseModel):
+    conversation_id: str
+    status: str
 
 
 def sse_event(data: dict) -> str:
     return f"data: {json.dumps(data)}\n\n"
 
 
-@router.post("/stream")
-async def chat_stream(body: ChatRequest, db: AsyncSession = Depends(get_db)):
-    # Input validation
-    if len(body.message) > MAX_MESSAGE_LENGTH:
-        async def reject():
-            yield sse_event({"type": "token", "content": "Your message is too long. Please keep it under 2000 characters."})
-            yield sse_event({"type": "done", "conversation_id": body.conversation_id or ""})
-        return StreamingResponse(reject(), media_type="text/event-stream")
+def _stream_key(conversation_id: str) -> str:
+    return f"stream:{conversation_id}"
 
-    db_var.set(db)
-    user_id_var.set(body.user_id)
+
+def _arq_redis_settings() -> RedisSettings:
+    """Convert redis_url string to arq's RedisSettings."""
+    from urllib.parse import urlparse
+    parsed = urlparse(settings.redis_url)
+    return RedisSettings(
+        host=parsed.hostname or "localhost",
+        port=parsed.port or 6379,
+        database=int(parsed.path.lstrip("/") or 0),
+        password=parsed.password,
+    )
+
+
+# Lazy-initialized Arq connection pool (shared across requests)
+_arq_pool = None
+
+
+async def _get_arq_pool():
+    global _arq_pool
+    if _arq_pool is None:
+        _arq_pool = await create_pool(_arq_redis_settings())
+    return _arq_pool
+
+
+# ── POST /stream — enqueue the agent task, return immediately ────────────────
+
+@router.post("/stream", response_model=EnqueueResponse)
+async def chat_stream(body: ChatRequest, db: AsyncSession = Depends(get_db)):
+    """
+    Enqueue the agent task and return the conversation_id.
+
+    The client should then connect to GET /events/{conversation_id}
+    to receive SSE events (status, token, cart_updated, done).
+    """
+    if len(body.message) > MAX_MESSAGE_LENGTH:
+        return JSONResponse(
+            status_code=400,
+            content={"detail": "Message exceeds 2000 character limit."},
+        )
 
     conversation_id = body.conversation_id or str(uuid.uuid4())
+
+    # Save user message to DB
     await save_message(db, conversation_id, "user", body.message)
 
-    db_messages = await load_messages(db, conversation_id)
-    messages = await build_context(db_messages)
+    # Enqueue the agent task — _job_id prevents duplicate processing
+    pool = await _get_arq_pool()
+    await pool.enqueue_job(
+        "run_agent_task",
+        conversation_id=conversation_id,
+        user_id=body.user_id,
+        _job_id=conversation_id,
+    )
 
-    async def event_generator():
-        current_messages = list(messages)
-        if not any(isinstance(m, SystemMessage) for m in current_messages):
-            current_messages = [SystemMessage(content=SYSTEM_PROMPT)] + current_messages
+    return EnqueueResponse(conversation_id=conversation_id, status="queued")
 
-        # LangSmith metadata — filter traces by conversation_id or user_id
-        langsmith_config = {
-            "metadata": {
-                "conversation_id": conversation_id,
-                "user_id": body.user_id,
-            },
-            "tags": [f"conv:{conversation_id}"],
-        }
 
-        full_response = ""
-        tool_rounds = 0
+# ── GET /events/{conversation_id} — SSE reader from Redis Stream ─────────────
 
-        try:
-            while True:
-                response = await llm_with_tools.ainvoke(
-                    current_messages, config=langsmith_config
-                )
+@router.get("/events/{conversation_id}")
+async def chat_events(
+    conversation_id: str,
+    last_id: str = Query(default="0-0", description="Resume from this Redis Stream ID"),
+):
+    """
+    SSE endpoint that reads events from the Redis Stream published
+    by the Arq worker. Supports reconnect via ?last_id= query param.
+    """
+    async def event_stream():
+        redis = get_redis()
+        stream = _stream_key(conversation_id)
+        cursor = last_id
 
-                if response.tool_calls:
-                    tool_rounds += 1
+        while True:
+            # XREAD BLOCK — wait up to SSE_TIMEOUT_SECONDS for new events
+            result = await redis.xread(
+                {stream: cursor},
+                count=50,
+                block=SSE_TIMEOUT_SECONDS * 1000,  # milliseconds
+            )
 
-                    # Guardrail: prevent infinite tool loops
-                    if tool_rounds > MAX_TOOL_ROUNDS:
-                        logger.warning(
-                            f"Agent exceeded {MAX_TOOL_ROUNDS} tool rounds for conversation {conversation_id}"
-                        )
-                        full_response = "I got a bit lost processing your request. Could you try rephrasing?"
-                        yield sse_event({"type": "status", "content": ""})
-                        yield sse_event({"type": "token", "content": full_response})
-                        break
+            if not result:
+                # Timeout — no events for SSE_TIMEOUT_SECONDS
+                yield sse_event({
+                    "type": "error",
+                    "content": "Stream timed out. Please try again.",
+                })
+                return
 
-                    # Append AIMessage ONCE before processing its tool calls
-                    current_messages.append(response)
+            for _stream_name, messages in result:
+                for msg_id, fields in messages:
+                    cursor = msg_id
+                    data = json.loads(fields["data"])
+                    yield sse_event(data)
 
-                    for tool_call in response.tool_calls:
-                        tool_name = tool_call["name"]
-                        yield sse_event({
-                            "type": "status",
-                            "content": FRIENDLY_NAMES.get(tool_name, f"Running {tool_name}..."),
-                        })
-
-                        try:
-                            tool_fn = TOOL_MAP[tool_call["name"]]
-                            result = await tool_fn.ainvoke(tool_call["args"])
-                        except Exception as e:
-                            logger.error(f"Tool {tool_name} failed: {e}")
-                            result = f"Tool error: unable to complete {tool_name}. Please try again."
-
-                        if tool_name in ("add_to_cart", "remove_from_cart", "clear_cart"):
-                            yield sse_event({"type": "cart_updated"})
-
-                        current_messages.append(ToolMessage(
-                            content=str(result),
-                            tool_call_id=tool_call["id"],
-                            name=tool_call["name"],
-                        ))
-
-                    continue
-
-                else:
-                    yield sse_event({"type": "status", "content": ""})
-
-                    async for chunk in llm_with_tools.astream(
-                        current_messages, config=langsmith_config
-                    ):
-                        token = chunk.content
-                        if token:
-                            full_response += token
-                            yield sse_event({"type": "token", "content": token})
-
-                    break
-
-        except Exception as e:
-            logger.error(f"Agent error for conversation {conversation_id}: {e}")
-            full_response = "Sorry, I encountered an error. Please try again in a moment."
-            yield sse_event({"type": "status", "content": ""})
-            yield sse_event({"type": "token", "content": full_response})
-
-        await save_message(db, conversation_id, "assistant", full_response)
-        yield sse_event({"type": "done", "conversation_id": conversation_id})
+                    # Close after "done" or "error" event
+                    if data.get("type") in ("done", "error"):
+                        return
 
     return StreamingResponse(
-        event_generator(),
+        event_stream(),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
