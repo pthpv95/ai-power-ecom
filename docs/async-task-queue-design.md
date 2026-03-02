@@ -281,8 +281,8 @@ uv run arq app.worker.WorkerSettings
 
 ## Status
 
-- [ ] Step 1: Infrastructure (Redis + dependencies)
-- [ ] Step 2: Worker (extract agent loop)
-- [ ] Step 3: Rewrite chat endpoints
-- [ ] Step 4: Stream lifecycle & error handling
-- [ ] Step 5: Frontend update
+- [x] Step 1: Infrastructure (Redis + dependencies)
+- [x] Step 2: Worker (extract agent loop)
+- [x] Step 3: Rewrite chat endpoints
+- [x] Step 4: Stream lifecycle & error handling
+- [x] Step 5: Frontend update
