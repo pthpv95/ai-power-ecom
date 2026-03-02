@@ -23,8 +23,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-MAX_MESSAGE_LENGTH = 2000  # characters, reject input over this
-SSE_TIMEOUT_SECONDS = 60   # close SSE if no events for this long
+MAX_MESSAGE_LENGTH = 2000       # characters, reject input over this
+SSE_TIMEOUT_SECONDS = 60        # close SSE if no events for this long
+SSE_KEEPALIVE_SECONDS = 15      # send heartbeat comment to prevent proxy timeouts
 
 
 class ChatRequest(BaseModel):
@@ -117,22 +118,31 @@ async def chat_events(
         redis = get_redis()
         stream = _stream_key(conversation_id)
         cursor = last_id
+        idle_intervals = 0
+        max_idle = SSE_TIMEOUT_SECONDS // SSE_KEEPALIVE_SECONDS
 
         while True:
-            # XREAD BLOCK — wait up to SSE_TIMEOUT_SECONDS for new events
+            # Block for keepalive interval — short enough to send heartbeats
             result = await redis.xread(
                 {stream: cursor},
                 count=50,
-                block=SSE_TIMEOUT_SECONDS * 1000,  # milliseconds
+                block=SSE_KEEPALIVE_SECONDS * 1000,
             )
 
             if not result:
-                # Timeout — no events for SSE_TIMEOUT_SECONDS
-                yield sse_event({
-                    "type": "error",
-                    "content": "Stream timed out. Please try again.",
-                })
-                return
+                idle_intervals += 1
+                if idle_intervals >= max_idle:
+                    # Total timeout reached — no events for SSE_TIMEOUT_SECONDS
+                    yield sse_event({
+                        "type": "error",
+                        "content": "Stream timed out. Please try again.",
+                    })
+                    return
+                # Send SSE comment as keepalive (prevents proxy/browser timeout)
+                yield ":keepalive\n\n"
+                continue
+
+            idle_intervals = 0  # reset on activity
 
             for _stream_name, messages in result:
                 for msg_id, fields in messages:

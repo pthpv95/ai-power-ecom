@@ -9,11 +9,9 @@ Start with:  uv run arq app.worker.WorkerSettings
 """
 import json
 import logging
-import uuid
 
-from arq import cron
 from arq.connections import RedisSettings
-from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import SystemMessage, ToolMessage
 
 from app.agent.context import db_var, user_id_var
 from app.agent.graph import SYSTEM_PROMPT, TOOL_MAP, llm_with_tools
@@ -187,4 +185,6 @@ class WorkerSettings:
     functions = [run_agent_task]
     redis_settings = _parse_redis_settings()
     max_jobs = 10
-    job_timeout = 120  # seconds — generous for multi-tool agent loops
+    job_timeout = 120       # seconds — generous for multi-tool agent loops
+    retry_jobs = True       # allow retries for transient failures
+    max_tries = 2           # original + 1 retry
