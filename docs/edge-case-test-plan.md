@@ -94,7 +94,7 @@ Turn 2: "Actually, show me what's in my cart, remove the boots, and find me some
 - **Result:** Agent fail to remove the boots after asking what's in the cart
 - **Fix:** Improve system prompt "- When the user wants to remove an item and multiple items could match (e.g. "remove the boots" but there are 3 different boots), ask which one they mean. If the user says "remove all boots" or "remove everything", use remove_from_cart for each matching item or clear_cart if appropriate."
 
-### Test 2.4 — Parallel information gathering
+### Test 2.4 — Parallel information gathering  ✅
 ```
 User: "Is the Summit Pro rain jacket waterproof? And how much is the CamelBak backpack?"
 ```
@@ -102,7 +102,7 @@ User: "Is the Summit Pro rain jacket waterproof? And how much is the CamelBak ba
 - **Bad outcome:** Agent only answers one question and ignores the other
 - **Result:** Worked
 
-### Test 2.5 — Conditional logic
+### Test 2.5 — Conditional logic ✅
 ```
 User: "If the North Face jacket is under $200, add it to my cart. Otherwise, find me a cheaper alternative."
 ```
@@ -122,7 +122,7 @@ Turn 2: "How much is the red one?"
 ```
 - **Expected:** Agent knows "the red one" = the red-colored shoe from the previous search results
 - **Bad outcome:** Agent asks "which red one?" or hallucinates a product
-- **Result:** ___
+- **Result:** Not halluciate but actively ask add "Speedhike Trail Runner" to be added to the cart
 
 ### Test 3.2 — "It" / "that" resolution
 ```
