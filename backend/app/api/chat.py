@@ -36,6 +36,7 @@ class ChatRequest(BaseModel):
 
 class EnqueueResponse(BaseModel):
     conversation_id: str
+    request_id: str
     status: str
 
 
@@ -43,8 +44,8 @@ def sse_event(data: dict) -> str:
     return f"data: {json.dumps(data)}\n\n"
 
 
-def _stream_key(conversation_id: str) -> str:
-    return f"stream:{conversation_id}"
+def _stream_key(request_id: str) -> str:
+    return f"stream:{request_id}"
 
 
 def _arq_redis_settings() -> RedisSettings:
@@ -87,36 +88,39 @@ async def chat_stream(body: ChatRequest, db: AsyncSession = Depends(get_db)):
         )
 
     conversation_id = body.conversation_id or str(uuid.uuid4())
+    request_id = str(uuid.uuid4())  # unique per message — prevents Arq dedup and stream collision
 
     # Save user message to DB
     await save_message(db, conversation_id, "user", body.message)
 
-    # Enqueue the agent task — _job_id prevents duplicate processing
+    # Enqueue the agent task — _job_id=request_id prevents double-submit of same message
     pool = await _get_arq_pool()
     await pool.enqueue_job(
         "run_agent_task",
         conversation_id=conversation_id,
         user_id=body.user_id,
-        _job_id=conversation_id,
+        request_id=request_id,
+        _job_id=request_id,
     )
 
-    return EnqueueResponse(conversation_id=conversation_id, status="queued")
+    return EnqueueResponse(conversation_id=conversation_id, request_id=request_id, status="queued")
 
 
-# ── GET /events/{conversation_id} — SSE reader from Redis Stream ─────────────
+# ── GET /events/{request_id} — SSE reader from Redis Stream ──────────────────
 
-@router.get("/events/{conversation_id}")
+@router.get("/events/{request_id}")
 async def chat_events(
-    conversation_id: str,
+    request_id: str,
     last_id: str = Query(default="0-0", description="Resume from this Redis Stream ID"),
 ):
     """
     SSE endpoint that reads events from the Redis Stream published
     by the Arq worker. Supports reconnect via ?last_id= query param.
+    Each request_id maps to a unique stream (one per user message).
     """
     async def event_stream():
         redis = get_redis()
-        stream = _stream_key(conversation_id)
+        stream = _stream_key(request_id)
         cursor = last_id
         idle_intervals = 0
         max_idle = SSE_TIMEOUT_SECONDS // SSE_KEEPALIVE_SECONDS

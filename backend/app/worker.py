@@ -37,20 +37,20 @@ FRIENDLY_NAMES = {
 }
 
 
-def _stream_key(conversation_id: str) -> str:
-    """Redis Stream key for a conversation's events."""
-    return f"stream:{conversation_id}"
+def _stream_key(request_id: str) -> str:
+    """Redis Stream key — unique per user message (not per conversation)."""
+    return f"stream:{request_id}"
 
 
-async def _publish(redis, conversation_id: str, event: dict) -> None:
-    """Append an event to the conversation's Redis Stream."""
+async def _publish(redis, request_id: str, event: dict) -> None:
+    """Append an event to the request's Redis Stream."""
     await redis.xadd(
-        _stream_key(conversation_id),
+        _stream_key(request_id),
         {"data": json.dumps(event)},
     )
 
 
-async def run_agent_task(ctx: dict, *, conversation_id: str, user_id: str) -> None:
+async def run_agent_task(ctx: dict, *, conversation_id: str, user_id: str, request_id: str) -> None:
     """
     Core agent loop — extracted from chat.py's event_generator().
 
@@ -104,15 +104,15 @@ async def run_agent_task(ctx: dict, *, conversation_id: str, user_id: str) -> No
                             "I got a bit lost processing your request. "
                             "Could you try rephrasing?"
                         )
-                        await _publish(redis, conversation_id, {"type": "status", "content": ""})
-                        await _publish(redis, conversation_id, {"type": "token", "content": full_response})
+                        await _publish(redis, request_id, {"type": "status", "content": ""})
+                        await _publish(redis, request_id, {"type": "token", "content": full_response})
                         break
 
                     current_messages.append(response)
 
                     for tool_call in response.tool_calls:
                         tool_name = tool_call["name"]
-                        await _publish(redis, conversation_id, {
+                        await _publish(redis, request_id, {
                             "type": "status",
                             "content": FRIENDLY_NAMES.get(tool_name, f"Running {tool_name}..."),
                         })
@@ -125,7 +125,7 @@ async def run_agent_task(ctx: dict, *, conversation_id: str, user_id: str) -> No
                             result = f"Tool error: unable to complete {tool_name}. Please try again."
 
                         if tool_name in ("add_to_cart", "remove_from_cart", "clear_cart"):
-                            await _publish(redis, conversation_id, {"type": "cart_updated"})
+                            await _publish(redis, request_id, {"type": "cart_updated"})
 
                         current_messages.append(ToolMessage(
                             content=str(result),
@@ -136,7 +136,7 @@ async def run_agent_task(ctx: dict, *, conversation_id: str, user_id: str) -> No
                     continue
 
                 else:
-                    await _publish(redis, conversation_id, {"type": "status", "content": ""})
+                    await _publish(redis, request_id, {"type": "status", "content": ""})
 
                     async for chunk in llm_with_tools.astream(
                         current_messages, config=langsmith_config
@@ -144,7 +144,7 @@ async def run_agent_task(ctx: dict, *, conversation_id: str, user_id: str) -> No
                         token = chunk.content
                         if token:
                             full_response += token
-                            await _publish(redis, conversation_id, {"type": "token", "content": token})
+                            await _publish(redis, request_id, {"type": "token", "content": token})
 
                     break
 
@@ -152,19 +152,19 @@ async def run_agent_task(ctx: dict, *, conversation_id: str, user_id: str) -> No
 
         except Exception as e:
             logger.error(f"Worker error for conversation {conversation_id}: {e}")
-            await _publish(redis, conversation_id, {
+            await _publish(redis, request_id, {
                 "type": "error",
                 "content": "Sorry, I encountered an error. Please try again in a moment.",
             })
 
         # Always emit "done" so the SSE reader knows to close
-        await _publish(redis, conversation_id, {
+        await _publish(redis, request_id, {
             "type": "done",
             "conversation_id": conversation_id,
         })
 
         # Auto-cleanup: expire the stream after 1 hour
-        await redis.expire(_stream_key(conversation_id), STREAM_TTL_SECONDS)
+        await redis.expire(_stream_key(request_id), STREAM_TTL_SECONDS)
 
 
 # ── Arq WorkerSettings ───────────────────────────────────────────────────────

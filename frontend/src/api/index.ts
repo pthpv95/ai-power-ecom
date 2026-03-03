@@ -123,10 +123,10 @@ export async function streamChatMessage(
     return
   }
 
-  const { conversation_id: convId } = await enqueueRes.json()
+  const { conversation_id: convId, request_id: reqId } = await enqueueRes.json()
 
-  // Step 2: Open SSE connection to read events from Redis Stream
-  const eventsRes = await fetch(`/api/chat/events/${convId}`)
+  // Step 2: Open SSE connection keyed by request_id (unique per message)
+  const eventsRes = await fetch(`/api/chat/events/${reqId}`)
 
   if (!eventsRes.ok || !eventsRes.body) {
     callbacks.onError('Failed to connect to event stream')
