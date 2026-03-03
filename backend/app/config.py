@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     openai_api_key: str
     pinecone_api_key: str
     pinecone_index: str
+    redis_url: str = "redis://localhost:6379"
 
 
 settings = Settings()

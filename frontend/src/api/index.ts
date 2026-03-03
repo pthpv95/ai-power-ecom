@@ -90,12 +90,11 @@ export async function sendChatMessage(
 }
 
 /**
- * SSE streaming version — reads tokens as they arrive.
+ * Two-step SSE streaming:
+ * 1. POST /api/chat/stream → enqueue agent task, get { conversation_id }
+ * 2. GET  /api/chat/events/{conversation_id} → read SSE events via fetch+ReadableStream
  *
- * We use fetch() + ReadableStream instead of EventSource because:
- * 1. EventSource only supports GET requests (we need POST with a body)
- * 2. fetch gives us more control over error handling
- * 3. ReadableStream lets us process chunks as they arrive
+ * Same callback interface as before — ChatPanel.tsx stays unchanged.
  */
 export async function streamChatMessage(
   message: string,
@@ -108,7 +107,8 @@ export async function streamChatMessage(
     onCartUpdated?: () => void
   },
 ): Promise<void> {
-  const res = await fetch('/api/chat/stream', {
+  // Step 1: Enqueue the agent task
+  const enqueueRes = await fetch('/api/chat/stream', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -118,12 +118,22 @@ export async function streamChatMessage(
     }),
   })
 
-  if (!res.ok || !res.body) {
-    callbacks.onError('Failed to connect to chat stream')
+  if (!enqueueRes.ok) {
+    callbacks.onError('Failed to enqueue chat message')
     return
   }
 
-  const reader = res.body.getReader()
+  const { conversation_id: convId, request_id: reqId } = await enqueueRes.json()
+
+  // Step 2: Open SSE connection keyed by request_id (unique per message)
+  const eventsRes = await fetch(`/api/chat/events/${reqId}`)
+
+  if (!eventsRes.ok || !eventsRes.body) {
+    callbacks.onError('Failed to connect to event stream')
+    return
+  }
+
+  const reader = eventsRes.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
 
@@ -155,6 +165,9 @@ export async function streamChatMessage(
           break
         case 'done':
           callbacks.onDone(data.conversation_id)
+          break
+        case 'error':
+          callbacks.onError(data.content)
           break
       }
     }
