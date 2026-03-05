@@ -6,6 +6,7 @@ from sqlalchemy.orm import selectinload
 from app.database import get_db
 from app.models import CartItem, Product
 from app.schemas import CartItemAdd, CartItemUpdate, CartItemResponse, CartResponse
+from app.api.users import ensure_user_exists
 
 router = APIRouter()
 
@@ -24,6 +25,9 @@ async def get_cart(user_id: str, db: AsyncSession = Depends(get_db)):
 
 @router.post("", response_model=CartItemResponse, status_code=201)
 async def add_to_cart(body: CartItemAdd, db: AsyncSession = Depends(get_db)):
+    # Ensure user record exists (lazy creation)
+    await ensure_user_exists(db, body.user_id)
+
     # Check product exists
     product = await db.get(Product, body.product_id)
     if not product:
@@ -57,8 +61,11 @@ async def add_to_cart(body: CartItemAdd, db: AsyncSession = Depends(get_db)):
 
 
 @router.patch("/{item_id}", status_code=200)
-async def update_cart_item(item_id: int, body: CartItemUpdate, db: AsyncSession = Depends(get_db)):
-    cart_item = await db.get(CartItem, item_id)
+async def update_cart_item(item_id: int, body: CartItemUpdate, user_id: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(CartItem).where(CartItem.id == item_id, CartItem.user_id == user_id)
+    )
+    cart_item = result.scalar_one_or_none()
     if not cart_item:
         raise HTTPException(status_code=404, detail="Cart item not found")
 
@@ -80,8 +87,11 @@ async def update_cart_item(item_id: int, body: CartItemUpdate, db: AsyncSession 
 
 
 @router.delete("/{item_id}", status_code=204)
-async def remove_from_cart(item_id: int, db: AsyncSession = Depends(get_db)):
-    cart_item = await db.get(CartItem, item_id)
+async def remove_from_cart(item_id: int, user_id: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(CartItem).where(CartItem.id == item_id, CartItem.user_id == user_id)
+    )
+    cart_item = result.scalar_one_or_none()
     if not cart_item:
         raise HTTPException(status_code=404, detail="Cart item not found")
     await db.delete(cart_item)

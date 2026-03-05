@@ -148,7 +148,7 @@ async def run_agent_task(ctx: dict, *, conversation_id: str, user_id: str, reque
 
                     break
 
-            await save_message(db, conversation_id, "assistant", full_response)
+            await save_message(db, conversation_id, "assistant", full_response, user_id=user_id)
 
         except Exception as e:
             logger.error(f"Worker error for conversation {conversation_id}: {e}")

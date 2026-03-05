@@ -16,12 +16,14 @@ async def save_message(
     conversation_id: str,
     role: str,
     content: str,
+    user_id: str | None = None,
 ) -> Message:
     """Save a single message to the database."""
     message = Message(
         conversation_id=conversation_id,
         role=role,
         content=content,
+        user_id=user_id,
     )
     db.add(message)
     await db.commit()
