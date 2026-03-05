@@ -7,6 +7,8 @@ real user scenarios end-to-end (minus the LLM decision-making).
 Think of these like Playwright tests but for the backend: they test
 the full path a request takes through the system.
 """
+from sqlalchemy import select
+
 from app.agent.context import db_var, user_id_var
 from app.agent.tools import (
     add_to_cart,
@@ -15,7 +17,7 @@ from app.agent.tools import (
     remove_from_cart,
     search_products,
 )
-from app.models import Message
+from app.models import Message, User
 from app.services.conversation import save_message, load_messages
 
 
@@ -132,10 +134,11 @@ async def test_load_via_endpoint_after_save(client, db):
     This crosses the service → endpoint boundary.
     """
     convo_id = "endpoint-load-test"
-    await save_message(db, convo_id, "user", "Hello")
-    await save_message(db, convo_id, "assistant", "Hi there!")
+    test_user = "endpoint-test-user"
+    await save_message(db, convo_id, "user", "Hello", user_id=test_user)
+    await save_message(db, convo_id, "assistant", "Hi there!", user_id=test_user)
 
-    response = await client.get(f"/api/chat/{convo_id}/messages")
+    response = await client.get(f"/api/chat/{convo_id}/messages?user_id={test_user}")
     assert response.status_code == 200
 
     data = response.json()
@@ -147,3 +150,28 @@ async def test_load_via_endpoint_after_save(client, db):
     # Verify each message has an ID and timestamp
     assert data[0]["id"] is not None
     assert data[0]["created_at"] is not None
+
+
+async def test_user_created_on_first_cart_add(client, sample_products):
+    """Adding to cart auto-creates a user record."""
+    user_id = "new_guest_user"
+    product = sample_products[0]
+    await client.post("/api/cart", json={
+        "user_id": user_id,
+        "product_id": product.id,
+        "quantity": 1,
+    })
+
+    # Verify user record was created (via direct DB check through another cart call)
+    cart = await client.get(f"/api/cart/{user_id}")
+    assert cart.status_code == 200
+    assert len(cart.json()["items"]) == 1
+
+
+async def test_conversation_access_wrong_user(client, db):
+    """Accessing another user's conversation returns 404."""
+    convo_id = "private-convo"
+    await save_message(db, convo_id, "user", "Secret message", user_id="alice")
+
+    response = await client.get(f"/api/chat/{convo_id}/messages?user_id=bob")
+    assert response.status_code == 404

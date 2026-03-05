@@ -1,3 +1,5 @@
+import { getUserId } from '../lib/user'
+
 export interface Product {
   id: number
   name: string
@@ -22,15 +24,13 @@ export interface Cart {
   total: number
 }
 
-const USER_ID = 'user_abc' // hardcoded for now, will come from auth later
-
 export async function fetchProducts(): Promise<Product[]> {
   const res = await fetch('/api/products')
   return res.json()
 }
 
 export async function fetchCart(): Promise<Cart> {
-  const res = await fetch(`/api/cart/${USER_ID}`)
+  const res = await fetch(`/api/cart/${getUserId()}`)
   return res.json()
 }
 
@@ -38,17 +38,17 @@ export async function addToCart(product_id: number): Promise<CartItem> {
   const res = await fetch('/api/cart', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ user_id: USER_ID, product_id, quantity: 1 }),
+    body: JSON.stringify({ user_id: getUserId(), product_id, quantity: 1 }),
   })
   return res.json()
 }
 
 export async function removeFromCart(item_id: number): Promise<void> {
-  await fetch(`/api/cart/${item_id}`, { method: 'DELETE' })
+  await fetch(`/api/cart/${item_id}?user_id=${encodeURIComponent(getUserId())}`, { method: 'DELETE' })
 }
 
 export async function updateCartQuantity(item_id: number, quantity: number): Promise<void> {
-  await fetch(`/api/cart/${item_id}`, {
+  await fetch(`/api/cart/${item_id}?user_id=${encodeURIComponent(getUserId())}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ quantity }),
@@ -64,7 +64,7 @@ export interface ChatMessage {
 }
 
 export async function loadConversation(conversation_id: string): Promise<ChatMessage[]> {
-  const res = await fetch(`/api/chat/${conversation_id}/messages`)
+  const res = await fetch(`/api/chat/${conversation_id}/messages?user_id=${encodeURIComponent(getUserId())}`)
   return res.json()
 }
 
@@ -81,7 +81,7 @@ export async function sendChatMessage(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      user_id: USER_ID,
+      user_id: getUserId(),
       message,
       conversation_id,
     }),
@@ -112,7 +112,7 @@ export async function streamChatMessage(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      user_id: USER_ID,
+      user_id: getUserId(),
       message,
       conversation_id,
     }),

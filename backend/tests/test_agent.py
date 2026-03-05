@@ -41,24 +41,14 @@ def test_should_continue_empty_tool_calls():
 # ── Guardrails (via streaming endpoint) ──────────────────────────────────────
 
 async def test_message_too_long_rejected(client):
-    """Messages over MAX_MESSAGE_LENGTH get a friendly rejection via SSE."""
+    """Messages over MAX_MESSAGE_LENGTH get a 400 rejection."""
     long_message = "x" * 2001  # MAX_MESSAGE_LENGTH is 2000
     response = await client.post("/api/chat/stream", json={
         "user_id": "test_user",
         "message": long_message,
     })
-    assert response.status_code == 200  # SSE always returns 200
-
-    # Parse SSE events from the response body
-    events = _parse_sse(response.text)
-
-    # Should contain a rejection message and a done event
-    token_events = [e for e in events if e.get("type") == "token"]
-    done_events = [e for e in events if e.get("type") == "done"]
-
-    assert len(token_events) >= 1
-    assert "too long" in token_events[0]["content"].lower()
-    assert len(done_events) == 1
+    assert response.status_code == 400
+    assert "2000" in response.json()["detail"]
 
 
 async def test_message_at_limit_accepted(client):

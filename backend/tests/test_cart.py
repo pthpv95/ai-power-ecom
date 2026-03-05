@@ -73,8 +73,8 @@ async def test_cart_total(client, sample_products):
 
 
 async def test_remove_from_cart(client, sample_cart_item):
-    """Deleting a cart item returns 204."""
-    response = await client.delete(f"/api/cart/{sample_cart_item.id}")
+    """Deleting a cart item owned by the user returns 204."""
+    response = await client.delete(f"/api/cart/{sample_cart_item.id}?user_id=test_user")
     assert response.status_code == 204
 
     # Verify it's gone
@@ -84,7 +84,28 @@ async def test_remove_from_cart(client, sample_cart_item):
 
 async def test_remove_from_cart_not_found(client):
     """Deleting a non-existent cart item returns 404."""
-    response = await client.delete("/api/cart/99999")
+    response = await client.delete("/api/cart/99999?user_id=test_user")
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Cart item not found"
+
+
+async def test_remove_from_cart_wrong_user(client, sample_cart_item):
+    """Deleting another user's cart item returns 404."""
+    response = await client.delete(f"/api/cart/{sample_cart_item.id}?user_id=other_user")
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Cart item not found"
+
+    # Verify item still exists for the real owner
+    cart = await client.get("/api/cart/test_user")
+    assert len(cart.json()["items"]) == 1
+
+
+async def test_update_cart_item_wrong_user(client, sample_cart_item):
+    """Updating another user's cart item returns 404."""
+    response = await client.patch(
+        f"/api/cart/{sample_cart_item.id}?user_id=other_user",
+        json={"quantity": 5},
+    )
     assert response.status_code == 404
     assert response.json()["detail"] == "Cart item not found"
 

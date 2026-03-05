@@ -5,7 +5,7 @@ import uuid
 
 from arq import create_pool
 from arq.connections import RedisSettings
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +18,7 @@ from app.redis_client import get_redis
 from app.services.conversation import save_message, load_messages
 from app.services.context_manager import build_context
 from app.schemas import MessageResponse
+from app.api.users import ensure_user_exists
 
 logger = logging.getLogger(__name__)
 
@@ -87,11 +88,14 @@ async def chat_stream(body: ChatRequest, db: AsyncSession = Depends(get_db)):
             content={"detail": "Message exceeds 2000 character limit."},
         )
 
+    # Ensure user record exists (lazy creation)
+    await ensure_user_exists(db, body.user_id)
+
     conversation_id = body.conversation_id or str(uuid.uuid4())
     request_id = str(uuid.uuid4())  # unique per message — prevents Arq dedup and stream collision
 
-    # Save user message to DB
-    await save_message(db, conversation_id, "user", body.message)
+    # Save user message to DB (with user_id for ownership)
+    await save_message(db, conversation_id, "user", body.message, user_id=body.user_id)
 
     # Enqueue the agent task — _job_id=request_id prevents double-submit of same message
     pool = await _get_arq_pool()
@@ -172,8 +176,11 @@ async def chat_events(
 # ── Load conversation history ─────────────────────────────────────────────────
 
 @router.get("/{conversation_id}/messages", response_model=list[MessageResponse])
-async def get_messages(conversation_id: str, db: AsyncSession = Depends(get_db)):
+async def get_messages(conversation_id: str, user_id: str, db: AsyncSession = Depends(get_db)):
     messages = await load_messages(db, conversation_id)
+    # Validate ownership: check if any message in this conversation belongs to the user
+    if messages and not any(m.user_id == user_id for m in messages):
+        raise HTTPException(status_code=404, detail="Conversation not found")
     return messages
 
 
@@ -186,11 +193,12 @@ class ChatResponse(BaseModel):
 
 @router.post("", response_model=ChatResponse)
 async def chat(body: ChatRequest, db: AsyncSession = Depends(get_db)):
+    await ensure_user_exists(db, body.user_id)
     db_var.set(db)
     user_id_var.set(body.user_id)
 
     conversation_id = body.conversation_id or str(uuid.uuid4())
-    await save_message(db, conversation_id, "user", body.message)
+    await save_message(db, conversation_id, "user", body.message, user_id=body.user_id)
 
     db_messages = await load_messages(db, conversation_id)
     messages = await build_context(db_messages)
@@ -206,5 +214,5 @@ async def chat(body: ChatRequest, db: AsyncSession = Depends(get_db)):
     result = await agent.ainvoke({"messages": messages}, config=langsmith_config)
     ai_message = result["messages"][-1]
 
-    await save_message(db, conversation_id, "assistant", ai_message.content)
+    await save_message(db, conversation_id, "assistant", ai_message.content, user_id=body.user_id)
     return ChatResponse(reply=ai_message.content, conversation_id=conversation_id)
