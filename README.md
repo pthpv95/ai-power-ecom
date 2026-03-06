@@ -31,13 +31,16 @@ A modern e-commerce platform with an AI-driven shopping assistant.
 - Docker & Docker Compose
 
 ### Setup
-
 1. **Backend:**
    ```bash
    cd backend
    uv sync
    # Set up .env file
+   
+   # Terminal 1: API server
    uv run uvicorn app.main:app --reload
+   # Terminal 2: Arq worker
+   uv run arq app.worker.WorkerSettings
    ```
 
 2. **Frontend:**
