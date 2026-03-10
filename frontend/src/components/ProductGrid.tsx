@@ -69,7 +69,7 @@ export default function ProductGrid({ onCartUpdated }: { onCartUpdated?: () => v
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex h-full min-h-0 flex-col">
       <div className="px-6 py-4 border-b border-border flex items-center justify-between">
         <div>
           <h2 className="font-semibold text-text-primary">Products</h2>

@@ -36,9 +36,9 @@ export default function App() {
   }, [])
 
   return (
-    <div className="flex h-screen bg-surface-secondary text-text-primary">
+    <div className="flex h-screen overflow-hidden bg-surface-secondary text-text-primary">
       {/* Dark sidebar */}
-      <div className="w-[380px] bg-sidebar flex flex-col shrink-0">
+      <div className="w-[380px] bg-sidebar flex min-h-0 flex-col shrink-0">
         <ChatPanel
           conversationId={conversationId}
           onConversationId={(id) => setConversationId(id || null)}
@@ -47,7 +47,7 @@ export default function App() {
       </div>
 
       {/* Light content area */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {/* Header */}
         <header className="flex items-center justify-between px-6 py-3 border-b border-border bg-surface-primary">
           <span className="text-sm text-text-secondary">
