@@ -94,13 +94,11 @@ async def test_extract_and_store_memories_upserts_with_confidence(db):
             db,
             "memory-user",
             [HumanMessage(content="I usually buy Patagonia jackets.")],
-            source_message_id=123,
         )
         updated = await extract_and_store_memories(
             db,
             "memory-user",
             [HumanMessage(content="Actually I prefer Arc'teryx jackets.")],
-            source_message_id=456,
         )
 
     assert inserted == 1
@@ -110,4 +108,4 @@ async def test_extract_and_store_memories_upserts_with_confidence(db):
     memory = result.scalar_one()
     assert memory.value == "Arc'teryx"
     assert Decimal(str(memory.confidence)) == Decimal("0.6")
-    assert memory.source_message_id == 456
+    assert memory.source_message_id is None
