@@ -1,9 +1,19 @@
 from datetime import datetime
+from enum import Enum
 
-from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String, Text, func
+from sqlalchemy import DateTime, Enum as SqlEnum, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+
+
+class MemoryCategory(str, Enum):
+    BRAND = "brand"
+    SIZE = "size"
+    BUDGET = "budget"
+    CATEGORY = "category"
+    STYLE = "style"
+    OTHER = "other"
 
 
 class User(Base):
@@ -50,3 +60,23 @@ class Message(Base):
     role: Mapped[str] = mapped_column(String(20), nullable=False)  # "user" or "assistant"
     content: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class UserMemory(Base):
+    __tablename__ = "user_memories"
+    __table_args__ = (
+        UniqueConstraint("user_id", "category", "key", name="uq_user_memories_user_category_key"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    category: Mapped[MemoryCategory] = mapped_column(
+        SqlEnum(MemoryCategory, name="memory_category", native_enum=False),
+        nullable=False,
+    )
+    key: Mapped[str] = mapped_column(String(255), nullable=False)
+    value: Mapped[str] = mapped_column(String(255), nullable=False)
+    confidence: Mapped[float] = mapped_column(Numeric(3, 2), nullable=False, default=0.5, server_default="0.5")
+    source_message_id: Mapped[int | None] = mapped_column(ForeignKey("messages.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())

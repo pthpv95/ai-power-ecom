@@ -10,7 +10,9 @@ from langgraph.graph.message import add_messages
 from typing_extensions import TypedDict
 
 from app.config import settings
+from app.agent.context import db_var, user_id_var
 from app.agent.tools import ALL_TOOLS
+from app.services.memory_recall import build_memory_context_block
 
 
 # ── State ─────────────────────────────────────────────────────────────────────
@@ -44,6 +46,23 @@ You can ONLY discuss products returned by search_products. Never invent or assum
 - Redirect off-topic questions politely.
 """
 
+
+def compose_system_prompt(memory_block: str = "") -> str:
+    if not memory_block:
+        return SYSTEM_PROMPT
+    return f"{SYSTEM_PROMPT}\n\n{memory_block}"
+
+
+async def build_system_prompt_with_memories() -> str:
+    try:
+        db = db_var.get()
+        user_id = user_id_var.get()
+    except LookupError:
+        return SYSTEM_PROMPT
+
+    memory_block = await build_memory_context_block(db, user_id)
+    return compose_system_prompt(memory_block)
+
 OPENAI_MODEL = "gpt-4o-mini"
 
 llm = ChatOpenAI(
@@ -61,7 +80,8 @@ async def agent_node(state: AgentState) -> dict:
     messages = state["messages"]
 
     if not any(isinstance(m, SystemMessage) for m in messages):
-        messages = [SystemMessage(content=SYSTEM_PROMPT)] + list(messages)
+        system_prompt = await build_system_prompt_with_memories()
+        messages = [SystemMessage(content=system_prompt)] + list(messages)
 
     response = await llm_with_tools.ainvoke(messages)
     return {"messages": [response]}

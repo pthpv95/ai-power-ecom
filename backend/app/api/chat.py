@@ -16,7 +16,8 @@ from app.agent.graph import agent
 from app.agent.context import db_var, user_id_var
 from app.redis_client import get_redis
 from app.services.conversation import save_message, load_messages
-from app.services.context_manager import build_context
+from app.services.context_manager import build_context_with_reserved_tokens
+from app.services.memory_recall import build_memory_context_block, count_text_tokens
 from app.schemas import MessageResponse
 from app.api.users import ensure_user_exists
 
@@ -201,7 +202,12 @@ async def chat(body: ChatRequest, db: AsyncSession = Depends(get_db)):
     await save_message(db, conversation_id, "user", body.message, user_id=body.user_id)
 
     db_messages = await load_messages(db, conversation_id)
-    messages = await build_context(db_messages)
+    memory_block = await build_memory_context_block(db, body.user_id)
+    memory_tokens = count_text_tokens(memory_block) if memory_block else 0
+    messages = await build_context_with_reserved_tokens(
+        db_messages,
+        reserved_tokens=memory_tokens,
+    )
 
     langsmith_config = {
         "metadata": {

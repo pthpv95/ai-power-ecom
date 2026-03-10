@@ -17,9 +17,10 @@ from langchain_core.tools import tool
 from sqlalchemy import delete, select
 from sqlalchemy.orm import selectinload
 
-from app.models import Product, CartItem
+from app.models import CartItem, MemoryCategory, Product, UserMemory
 from app.services.search import semantic_search
 from app.agent.context import db_var, user_id_var
+from app.services.memory_recall import format_memories
 
 
 def format_product(p: Product) -> str:
@@ -211,6 +212,74 @@ async def compare_products(product_ids: list[int]) -> str:
     return "\n\n--- vs ---\n\n".join(lines)
 
 
+@tool
+async def get_user_preferences(category: str | None = None) -> str:
+    """Get stored user shopping preferences.
+    Use this when you need to check the user's known sizes, brands, budgets,
+    styles, or other saved preferences before making recommendations.
+    """
+    db = db_var.get()
+    user_id = user_id_var.get()
+
+    stmt = select(UserMemory).where(UserMemory.user_id == user_id)
+    if category:
+        try:
+            stmt = stmt.where(UserMemory.category == MemoryCategory(category.lower()))
+        except ValueError:
+            return "Unknown category. Use brand, size, budget, category, style, or other."
+    stmt = stmt.order_by(UserMemory.confidence.desc(), UserMemory.updated_at.desc())
+
+    result = await db.execute(stmt)
+    memories = result.scalars().all()
+    if not memories:
+        return "No stored user preferences found."
+    return format_memories(list(memories))
+
+
+@tool
+async def manage_memory(
+    action: str,
+    category: str,
+    key: str,
+    value: str | None = None,
+) -> str:
+    """Delete or update a stored user preference.
+    Use action='delete' to forget a preference.
+    Use action='update' when the user corrects a stored preference and provides a new value.
+    """
+    db = db_var.get()
+    user_id = user_id_var.get()
+    try:
+        memory_category = MemoryCategory(category.lower())
+    except ValueError:
+        return "Unknown category. Use brand, size, budget, category, style, or other."
+
+    result = await db.execute(
+        select(UserMemory).where(
+            UserMemory.user_id == user_id,
+            UserMemory.category == memory_category,
+            UserMemory.key == key,
+        )
+    )
+    memory = result.scalar_one_or_none()
+    if memory is None:
+        return "No matching stored preference was found."
+
+    if action == "delete":
+        await db.delete(memory)
+        await db.commit()
+        return f"Deleted stored preference for {key}."
+
+    if action == "update":
+        if not value:
+            return "A new value is required when updating a stored preference."
+        memory.value = value
+        await db.commit()
+        return f"Updated stored preference for {key} to {value}."
+
+    return "Unsupported action. Use delete or update."
+
+
 ALL_TOOLS = [
     search_products,
     get_product_details,
@@ -219,4 +288,6 @@ ALL_TOOLS = [
     clear_cart,
     get_current_cart,
     compare_products,
+    get_user_preferences,
+    manage_memory,
 ]

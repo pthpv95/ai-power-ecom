@@ -11,15 +11,17 @@ import json
 import logging
 
 from arq.connections import RedisSettings
-from langchain_core.messages import SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 
 from app.agent.context import db_var, user_id_var
-from app.agent.graph import SYSTEM_PROMPT, TOOL_MAP, llm_with_tools
+from app.agent.graph import TOOL_MAP, compose_system_prompt, llm_with_tools
 from app.config import settings
 from app.database import SessionLocal
 from app.redis_client import get_redis
-from app.services.context_manager import build_context
+from app.services.context_manager import build_context_with_reserved_tokens
 from app.services.conversation import load_messages, save_message
+from app.services.memory_extractor import extract_and_store_memories
+from app.services.memory_recall import build_memory_context_block, count_text_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +36,8 @@ FRIENDLY_NAMES = {
     "remove_from_cart": "Removing from cart...",
     "get_current_cart": "Checking your cart...",
     "compare_products": "Comparing products...",
+    "get_user_preferences": "Checking your saved preferences...",
+    "manage_memory": "Updating your saved preferences...",
 }
 
 
@@ -70,11 +74,16 @@ async def run_agent_task(ctx: dict, *, conversation_id: str, user_id: str, reque
 
         try:
             db_messages = await load_messages(db, conversation_id)
-            messages = await build_context(db_messages)
+            memory_block = await build_memory_context_block(db, user_id)
+            memory_tokens = count_text_tokens(memory_block) if memory_block else 0
+            messages = await build_context_with_reserved_tokens(
+                db_messages,
+                reserved_tokens=memory_tokens,
+            )
 
             current_messages = list(messages)
             if not any(isinstance(m, SystemMessage) for m in current_messages):
-                current_messages = [SystemMessage(content=SYSTEM_PROMPT)] + current_messages
+                current_messages = [SystemMessage(content=compose_system_prompt(memory_block))] + current_messages
 
             langsmith_config = {
                 "metadata": {
@@ -147,8 +156,34 @@ async def run_agent_task(ctx: dict, *, conversation_id: str, user_id: str, reque
                             await _publish(redis, request_id, {"type": "token", "content": token})
 
                     break
+            assistant_message = await save_message(
+                db,
+                conversation_id,
+                "assistant",
+                full_response,
+                user_id=user_id,
+            )
 
-            await save_message(db, conversation_id, "assistant", full_response, user_id=user_id)
+            try:
+                source_message_id = next(
+                    (message.id for message in reversed(db_messages) if message.role == "user"),
+                    None,
+                )
+                extraction_messages = [
+                    message for message in current_messages if not isinstance(message, SystemMessage)
+                ]
+                extraction_messages.append(AIMessage(content=full_response))
+                await extract_and_store_memories(
+                    db,
+                    user_id,
+                    extraction_messages,
+                    source_message_id=source_message_id or assistant_message.id,
+                )
+            except Exception:
+                logger.exception(
+                    "Memory extraction failed for conversation %s",
+                    conversation_id,
+                )
 
         except Exception as e:
             logger.error(f"Worker error for conversation {conversation_id}: {e}")

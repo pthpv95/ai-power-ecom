@@ -75,13 +75,26 @@ async def build_context(db_messages: list[Message]) -> list:
     if not db_messages:
         return []
 
+    return await build_context_with_reserved_tokens(db_messages, reserved_tokens=0)
+
+
+async def build_context_with_reserved_tokens(
+    db_messages: list[Message],
+    *,
+    reserved_tokens: int = 0,
+) -> list:
+    """Build context while reserving part of the token budget for other prompt blocks."""
+    if not db_messages:
+        return []
+
     lc_messages = messages_to_langchain(db_messages)
+    history_budget = max(0, MAX_HISTORY_TOKENS - reserved_tokens)
 
     # Count total tokens
     total_tokens = sum(count_tokens(m.content) for m in lc_messages)
 
     # Under budget — return everything as-is
-    if total_tokens <= MAX_HISTORY_TOKENS:
+    if total_tokens <= history_budget:
         return lc_messages
 
     # Over budget — split into old (to summarize) and recent (to keep)
